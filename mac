@@ -1,0 +1,37 @@
+#!/bin/sh
+# Enable SSH on this Mac and let Karl in with his keys.
+#   curl -L boxdragon.github.io/mac | sh
+# Source: github.com/BoxDragon/boxdragon.github.io
+set -eu
+
+KEYS='ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIADxHzhCNcqSaPHddBRHnTrBFcksem1Ce+4V54wZVuWz karl.anton.bergstrom@gmail.com
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAQdO+bl/GK8y6uhx7qzIc8OwhRrRG44STb1TgyF81wN karl.anton.bergstrom@gmail.com'
+
+# 1. Authorize the keys for the current user (idempotent).
+mkdir -p "$HOME/.ssh"
+chmod 700 "$HOME/.ssh"
+touch "$HOME/.ssh/authorized_keys"
+chmod 600 "$HOME/.ssh/authorized_keys"
+printf '%s\n' "$KEYS" | while IFS= read -r key; do
+  grep -qxF "$key" "$HOME/.ssh/authorized_keys" || printf '%s\n' "$key" >> "$HOME/.ssh/authorized_keys"
+done
+echo "Keys authorized for $(whoami)."
+
+# 2. Turn on Remote Login (sshd). launchctl works without granting Terminal
+#    Full Disk Access, which `systemsetup -setremotelogin on` needs on
+#    current macOS. sudo asks for this Mac's password.
+echo "Enabling Remote Login (sudo will ask for your password)..."
+sudo launchctl enable system/com.openssh.sshd
+sudo launchctl bootstrap system /System/Library/LaunchDaemons/ssh.plist 2>/dev/null || true
+
+# 3. Check and report.
+if nc -z -G 3 127.0.0.1 22 2>/dev/null; then
+  echo "SSH is on."
+else
+  echo "SSH did not come up. Turn it on by hand: System Settings > General > Sharing > Remote Login."
+  exit 1
+fi
+ip=$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || echo "?")
+echo
+echo "Connect with:  ssh $(whoami)@$ip"
+echo "Hostname:      $(scutil --get LocalHostName 2>/dev/null || hostname).local"
